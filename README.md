@@ -1,7 +1,5 @@
 # soop
 
-[![npm version](https://img.shields.io/npm/v/soop-extension.svg?style=for-the-badge)](https://www.npmjs.com/package/soop-extension)
-[![npm downloads](https://img.shields.io/npm/dm/soop-extension.svg?style=for-the-badge)](http://npm-stat.com/charts.html?package=soop-extension)
 [![license](https://img.shields.io/github/license/maro5397/soop?style=for-the-badge)](https://github.com/maro5397/soop/blob/main/LICENSE)
 ![language](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![createAt](https://img.shields.io/github/created-at/maro5397/soop?style=for-the-badge)
