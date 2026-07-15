@@ -230,8 +230,8 @@ export class SoopChat {
 
     private parseEmoticon(packet: string) {
         const parts = packet.split(ChatDelimiter.SEPARATOR);
-        const [, , , emoticonId, , , userId, username] = parts
-        return {userId: userId, username: username, emoticonId: emoticonId}
+        const [, , , stickerPackId, emoticonIndex, , userId, username] = parts
+        return {userId: userId, username: username, emoticonId: stickerPackId, emoticonIndex: emoticonIndex}
     }
 
     private parseTextDonation(packet: string) {
