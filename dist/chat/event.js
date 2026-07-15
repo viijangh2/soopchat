@@ -1,0 +1,20 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SoopChatEvent = void 0;
+var SoopChatEvent;
+(function (SoopChatEvent) {
+    SoopChatEvent["CONNECT"] = "connect";
+    SoopChatEvent["ENTER_CHAT_ROOM"] = "enterChatRoom";
+    SoopChatEvent["DISCONNECT"] = "disconnect";
+    SoopChatEvent["CHAT"] = "chat";
+    SoopChatEvent["EMOTICON"] = "emoticon";
+    SoopChatEvent["NOTIFICATION"] = "notification";
+    SoopChatEvent["TEXT_DONATION"] = "textDonation";
+    SoopChatEvent["VIDEO_DONATION"] = "videoDonation";
+    SoopChatEvent["AD_BALLOON_DONATION"] = "adBalloonDonation";
+    SoopChatEvent["SUBSCRIBE"] = "subscribe";
+    SoopChatEvent["VIEWER"] = "viewer";
+    SoopChatEvent["EXIT"] = "exit";
+    SoopChatEvent["UNKNOWN"] = "unknown";
+    SoopChatEvent["RAW"] = "raw";
+})(SoopChatEvent || (exports.SoopChatEvent = SoopChatEvent = {}));
