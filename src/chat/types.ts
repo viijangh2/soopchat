@@ -115,4 +115,8 @@ export interface ExitResponse extends Response{
 
 export interface DisconnectResponse extends Response{
     streamerId: string
+    reason?: string
+    code?: number
+    wasClean?: boolean
+    error?: string
 }

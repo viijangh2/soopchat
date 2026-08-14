@@ -20,6 +20,7 @@ class SoopChat {
     options;
     handlers = [];
     pingIntervalId = null;
+    lastError = null;
     constructor(options) {
         this.options = options;
         this.options.baseUrls = options.baseUrls ?? const_1.DEFAULT_BASE_URLS;
@@ -49,16 +50,31 @@ class SoopChat {
         };
         this.ws.onmessage = this.handleMessage.bind(this);
         this.startPingInterval();
-        this.ws.onclose = () => {
-            this.disconnect();
+        this.ws.onerror = (event) => {
+            this.lastError = event?.message || event?.error?.message || 'WebSocket error';
+        };
+        this.ws.onclose = (event) => {
+            this.disconnect({
+                code: event?.code,
+                reason: event?.reason,
+                wasClean: event?.wasClean,
+                error: this.lastError
+            });
         };
     }
-    async disconnect() {
+    async disconnect(detail = {}) {
         if (!this._connected) {
             return;
         }
         const receivedTime = new Date().toISOString();
-        this.emit(event_1.SoopChatEvent.DISCONNECT, { streamerId: this.options.streamerId, receivedTime: receivedTime });
+        this.emit(event_1.SoopChatEvent.DISCONNECT, {
+            streamerId: this.options.streamerId,
+            receivedTime: receivedTime,
+            code: detail.code,
+            reason: detail.reason,
+            wasClean: detail.wasClean,
+            error: detail.error
+        });
         this.stopPingInterval();
         this.ws?.close();
         this.ws = null;

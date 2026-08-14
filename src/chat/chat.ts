@@ -16,6 +16,7 @@ export class SoopChat {
     private options: SoopChatOptions
     private handlers: [string, (data: any) => void][] = []
     private pingIntervalId = null
+    private lastError: string = null
 
     constructor(options: SoopChatOptionsWithClient) {
         this.options = options
@@ -57,17 +58,33 @@ export class SoopChat {
         this.ws.onmessage = this.handleMessage.bind(this)
         this.startPingInterval();
 
-        this.ws.onclose = () => {
-            this.disconnect()
+        this.ws.onerror = (event: any) => {
+            this.lastError = event?.message || event?.error?.message || 'WebSocket error'
+        }
+
+        this.ws.onclose = (event: any) => {
+            this.disconnect({
+                code: event?.code,
+                reason: event?.reason,
+                wasClean: event?.wasClean,
+                error: this.lastError
+            })
         }
     }
 
-    async disconnect() {
+    async disconnect(detail: { code?: number, reason?: string, wasClean?: boolean, error?: string } = {}) {
         if (!this._connected) {
             return
         }
         const receivedTime = new Date().toISOString();
-        this.emit(SoopChatEvent.DISCONNECT, {streamerId: this.options.streamerId, receivedTime: receivedTime})
+        this.emit(SoopChatEvent.DISCONNECT, {
+            streamerId: this.options.streamerId,
+            receivedTime: receivedTime,
+            code: detail.code,
+            reason: detail.reason,
+            wasClean: detail.wasClean,
+            error: detail.error
+        })
         this.stopPingInterval()
         this.ws?.close()
         this.ws = null
