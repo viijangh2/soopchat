@@ -17,6 +17,10 @@ export class SoopChat {
     private handlers: [string, (data: any) => void][] = []
     private pingIntervalId = null
     private lastError: string = null
+    private connectedAt: number = null
+    private lastMessageType: string = null
+    private lastMessageAt: string = null
+    private lastPacketPreview: string = null
 
     constructor(options: SoopChatOptionsWithClient) {
         this.options = options
@@ -43,6 +47,11 @@ export class SoopChat {
             throw this.errorHandling("Not Streaming now")
         }
         this.chatUrl = this.makeChatUrl(this.liveDetail)
+        this.lastError = null
+        this.connectedAt = null
+        this.lastMessageType = null
+        this.lastMessageAt = null
+        this.lastPacketPreview = null
 
         this.ws = new WebSocket(
             this.chatUrl,
@@ -67,12 +76,13 @@ export class SoopChat {
                 code: event?.code,
                 reason: event?.reason,
                 wasClean: event?.wasClean,
-                error: this.lastError
+                error: this.lastError,
+                source: 'websocket-close'
             })
         }
     }
 
-    async disconnect(detail: { code?: number, reason?: string, wasClean?: boolean, error?: string } = {}) {
+    async disconnect(detail: { code?: number, reason?: string, wasClean?: boolean, error?: string, source?: string, packet?: string } = {}) {
         if (!this._connected) {
             return
         }
@@ -83,7 +93,12 @@ export class SoopChat {
             code: detail.code,
             reason: detail.reason,
             wasClean: detail.wasClean,
-            error: detail.error
+            error: detail.error,
+            source: detail.source,
+            packet: detail.packet,
+            lastMessageType: this.lastMessageType,
+            lastMessageAt: this.lastMessageAt,
+            uptimeMs: this.connectedAt ? Date.now() - this.connectedAt : undefined
         })
         this.stopPingInterval()
         this.ws?.close()
@@ -123,10 +138,16 @@ export class SoopChat {
         this.emit(SoopChatEvent.RAW, Buffer.from(packet))
 
         const messageType = this.parseMessageType(packet)
+        this.lastMessageType = messageType
+        this.lastMessageAt = receivedTime
+        this.lastPacketPreview = packet
+            .replace(/[\x00-\x1f\x7f]/g, (char) => `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+            .slice(0, 300)
 
         switch (messageType) {
             case ChatType.CONNECT:
                 this._connected = true
+                this.connectedAt = Date.now()
                 const connect = this.parseConnect(packet)
                 this.emit(SoopChatEvent.CONNECT, {...connect, streamerId: this.options.streamerId, receivedTime: receivedTime})
                 const JOIN_PACKET = this.getJoinPacket();
@@ -189,7 +210,11 @@ export class SoopChat {
                 break
 
             case ChatType.DISCONNECT:
-                await this.disconnect();
+                await this.disconnect({
+                    source: 'soop-disconnect-packet',
+                    reason: 'SOOP 채팅 서버가 DISCONNECT(0007) 패킷을 보냈습니다.',
+                    packet: this.lastPacketPreview
+                });
                 break;
 
             default:

@@ -64,11 +64,13 @@ async function start() {
 
     function formatDisconnectReason(res = {}) {
         const parts = [];
+        if (res.source) parts.push(`source: ${res.source}`);
         if (res.code !== undefined && res.code !== null) parts.push(`close code ${res.code}`);
         if (res.reason) parts.push(`reason: ${res.reason}`);
         if (res.wasClean !== undefined) parts.push(`clean: ${res.wasClean ? 'yes' : 'no'}`);
         if (res.error) parts.push(`error: ${res.error}`);
-        return parts.length ? parts.join(' / ') : '서버가 구체적인 종료 사유를 전달하지 않았습니다.';
+        if (res.lastMessageType) parts.push(`last message: ${res.lastMessageType}`);
+        return parts.length ? parts.join(' / ') : '종료 이벤트에 상세 정보가 없어 Colab 런타임 중단, 네트워크 유휴 종료, 또는 서버 측 무사유 종료 가능성이 있습니다.';
     }
 
     process.on('uncaughtException', (err) => {
@@ -265,7 +267,12 @@ async function start() {
             code: res.code,
             reason: res.reason || '',
             wasClean: res.wasClean,
-            error: res.error || ''
+            error: res.error || '',
+            source: res.source || '',
+            packet: res.packet || '',
+            lastMessageType: res.lastMessageType || '',
+            lastMessageAt: res.lastMessageAt || '',
+            uptimeMs: res.uptimeMs
         });
         process.exit(0);
     });
@@ -320,7 +327,7 @@ def listen_node(proc, proc_id):
                 user = data.get('user')
                 content = data.get('content')
                 is_streamer = data.get('isStreamer', False) # 💡 isStreamer 파싱 추가
-                meta = {k: data.get(k) for k in ('code', 'reason', 'wasClean', 'error', 'stack') if k in data}
+                meta = {k: data.get(k) for k in ('code', 'reason', 'wasClean', 'error', 'stack', 'source', 'packet', 'lastMessageType', 'lastMessageAt', 'uptimeMs') if k in data}
 
                 if tag == 'AUTH_CHECK':
                     ui_queue.put(('chat', 'AUTH_CHECK', user, content, '', False))
@@ -1007,12 +1014,20 @@ window.appendChatBatch = function(chatList) {
                 meta.code !== undefined ? `WebSocket close code: ${meta.code}` : null,
                 meta.reason ? `서버 reason: ${meta.reason}` : null,
                 meta.wasClean !== undefined ? `정상 종료 여부: ${meta.wasClean ? '예' : '아니오'}` : null,
-                meta.error ? `오류: ${meta.error}` : null
+                meta.error ? `오류: ${meta.error}` : null,
+                meta.source ? `발생 지점: ${meta.source}` : null,
+                meta.lastMessageType ? `마지막 수신 타입: ${meta.lastMessageType}` : null,
+                meta.lastMessageAt ? `마지막 수신 시간: ${meta.lastMessageAt}` : null,
+                meta.uptimeMs !== undefined ? `연결 유지 시간: ${Math.round(meta.uptimeMs / 1000)}초` : null,
+                meta.packet ? `마지막 패킷 미리보기: ${meta.packet}` : null
             ].filter(Boolean);
             const reasonBox = document.getElementById('disconnectReason');
             if (reasonBox) {
                 reasonBox.style.display = 'block';
-                reasonBox.textContent = `🔎 최근 연결 끊김 원인\n${processedText}\n${detailLines.join('\n')}`;
+                const hint = meta.source === 'soop-disconnect-packet'
+                    ? '\n\n해석: WebSocket 자체 오류가 아니라 SOOP 채팅 서버가 연결 종료 패킷(0007)을 보낸 상황입니다. 방송 종료/채팅 서버 정책/중복 접속/세션 문제일 수 있습니다.'
+                    : '';
+                reasonBox.textContent = `🔎 최근 연결 끊김 원인\n${processedText}\n${detailLines.join('\n')}${hint}`;
             }
             div.innerHTML = `<span style="background:#ff9800; color:black; padding:1px 4px; border-radius:3px; font-size:10px; font-weight:bold;">연결 끊김</span> <span style="color:#ffb74d;">${processedText}</span>`;
         }

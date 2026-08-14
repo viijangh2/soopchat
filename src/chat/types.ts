@@ -119,4 +119,9 @@ export interface DisconnectResponse extends Response{
     code?: number
     wasClean?: boolean
     error?: string
+    source?: string
+    packet?: string
+    lastMessageType?: string
+    lastMessageAt?: string
+    uptimeMs?: number
 }
