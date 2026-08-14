@@ -8,11 +8,23 @@ export declare class SoopChat {
     private options;
     private handlers;
     private pingIntervalId;
+    private lastError;
+    private connectedAt;
+    private lastMessageType;
+    private lastMessageAt;
+    private lastPacketPreview;
     constructor(options: SoopChatOptionsWithClient);
     private _connected;
     private _entered;
     connect(): Promise<void>;
-    disconnect(): Promise<void>;
+    disconnect(detail?: {
+        code?: number;
+        reason?: string;
+        wasClean?: boolean;
+        error?: string;
+        source?: string;
+        packet?: string;
+    }): Promise<void>;
     sendChat(message: string): Promise<boolean>;
     on<T extends keyof Events>(event: T, handler: (data: Events[T]) => void): void;
     emit(event: string, data: any): void;

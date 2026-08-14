@@ -56,11 +56,33 @@ async function start() {
     const client = new SoopClient();
     const loginConfig = (userId && password) ? { userId, password } : null;
 
-    function send(tag, user, content, isStreamer = false) {
+    function send(tag, user, content, isStreamer = false, meta = {}) {
         try {
-            console.log(JSON.stringify({ tag, user, content, isStreamer }));
+            console.log(JSON.stringify({ tag, user, content, isStreamer, ...meta }));
         } catch(e) {}
     }
+
+    function formatDisconnectReason(res = {}) {
+        const parts = [];
+        if (res.source) parts.push(`source: ${res.source}`);
+        if (res.code !== undefined && res.code !== null) parts.push(`close code ${res.code}`);
+        if (res.reason) parts.push(`reason: ${res.reason}`);
+        if (res.wasClean !== undefined) parts.push(`clean: ${res.wasClean ? 'yes' : 'no'}`);
+        if (res.error) parts.push(`error: ${res.error}`);
+        if (res.lastMessageType) parts.push(`last message: ${res.lastMessageType}`);
+        return parts.length ? parts.join(' / ') : '종료 이벤트에 상세 정보가 없어 Colab 런타임 중단, 네트워크 유휴 종료, 또는 서버 측 무사유 종료 가능성이 있습니다.';
+    }
+
+    process.on('uncaughtException', (err) => {
+        send('FATAL', 'Node.js', `예외로 브릿지가 종료됩니다: ${err.message}`, false, { stack: err.stack || '' });
+        process.exit(1);
+    });
+
+    process.on('unhandledRejection', (reason) => {
+        const message = reason && reason.message ? reason.message : String(reason);
+        send('FATAL', 'Node.js', `비동기 오류로 브릿지가 종료됩니다: ${message}`, false, { stack: reason && reason.stack ? reason.stack : '' });
+        process.exit(1);
+    });
 
     const normalizeUserId = (id) =>
         String(id || '')
@@ -240,7 +262,18 @@ async function start() {
     });
 
     soopChat.on(SoopChatEvent.DISCONNECT, (res) => {
-        send('DISCONNECT', '시스템', `${res.streamerId} 방송 서버와 연결이 해제되었습니다.`);
+        const reason = formatDisconnectReason(res);
+        send('DISCONNECT', '시스템', `${res.streamerId} 방송 서버와 연결이 해제되었습니다. 원인: ${reason}`, false, {
+            code: res.code,
+            reason: res.reason || '',
+            wasClean: res.wasClean,
+            error: res.error || '',
+            source: res.source || '',
+            packet: res.packet || '',
+            lastMessageType: res.lastMessageType || '',
+            lastMessageAt: res.lastMessageAt || '',
+            uptimeMs: res.uptimeMs
+        });
         process.exit(0);
     });
 
@@ -294,6 +327,7 @@ def listen_node(proc, proc_id):
                 user = data.get('user')
                 content = data.get('content')
                 is_streamer = data.get('isStreamer', False) # 💡 isStreamer 파싱 추가
+                meta = {k: data.get(k) for k in ('code', 'reason', 'wasClean', 'error', 'stack', 'source', 'packet', 'lastMessageType', 'lastMessageAt', 'uptimeMs') if k in data}
 
                 if tag == 'AUTH_CHECK':
                     ui_queue.put(('chat', 'AUTH_CHECK', user, content, '', False))
@@ -303,8 +337,13 @@ def listen_node(proc, proc_id):
                     ui_queue.put(('chat', 'SYSTEM', '', f'✅ [{disp_name}] 방송 서버 연동 성공', '', False))
                 else:
                     # 💡 UI로 전달하는 튜플에 is_streamer 정보 전달
-                    ui_queue.put(('chat', tag, user, content, data.get('userId', ''), is_streamer))
+                    ui_queue.put(('chat', tag, user, content, data.get('userId', ''), is_streamer, meta))
             except: pass
+
+    exit_code = proc.poll()
+    if active_proc_id == proc_id and exit_code is not None and exit_code != 0:
+        ui_queue.put(('status', f'🔴 Node.js 브릿지 종료됨 (exit {exit_code})'))
+        ui_queue.put(('chat', 'FATAL', '시스템', f'Node.js 브릿지가 비정상 종료되었습니다. exit code: {exit_code}', '', False, {'code': exit_code}))
 
 def boot_node():
     global process, active_proc_id
@@ -347,7 +386,8 @@ def kernel_poll():
                 "user": item[2],
                 "content": item[3],
                 "userId": item[4] if len(item) > 4 else "",
-                "isStreamer": item[5] if len(item) > 5 else False
+                "isStreamer": item[5] if len(item) > 5 else False,
+                "meta": item[6] if len(item) > 6 else {}
             })
         elif item[0] == 'status':
             status_text = item[1]
@@ -487,6 +527,7 @@ html_code = r"""
                 <div id="scrollIndicator" style="color: #00e676; font-weight: bold;">● 실시간 추적 중</div>
                 <div id="statusText" style="color: #aaa; font-weight: bold;">⚪ 대기 중...</div>
             </div>
+            <div id="disconnectReason" style="display:none; color:#ffb74d; background:rgba(255,183,77,0.08); border:1px solid rgba(255,183,77,0.25); border-radius:4px; padding:6px 8px; font-size:11px; line-height:1.4; white-space:pre-wrap;"></div>
         </div>
 
         <div id="chatBox" onmouseenter="setScrollLock(true)" onmouseleave="setScrollLock(false)" ontouchstart="setScrollLock(true)" style="flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; background: #18181b;">
@@ -836,6 +877,8 @@ function doConnect() {
     renderEmojiPicker(selectedEmojis);
 
     document.getElementById('chatBox').innerHTML = '<div style="color: #888; text-align: center; font-size: 12px;">⏳ 실행 중...</div>';
+    const reasonBox = document.getElementById('disconnectReason');
+    if (reasonBox) { reasonBox.style.display = 'none'; reasonBox.textContent = ''; }
     isMouseOverChat = false;
     kernel('kernel_connect', [streamer, uid, upw]);
 }
@@ -964,7 +1007,37 @@ window.appendChatBatch = function(chatList) {
         else if (chat.tag === 'MYSELF') {
             div.innerHTML = `<span style="color:#81c784; font-weight:bold;">내 채팅:</span> <span style="color:#81c784;">${processedText}</span>`;
         }
+        else if (chat.tag === 'DISCONNECT') {
+            const meta = chat.meta || {};
+            const detailLines = [
+                `표시 시간: ${new Date().toLocaleString()}`,
+                meta.code !== undefined ? `WebSocket close code: ${meta.code}` : null,
+                meta.reason ? `서버 reason: ${meta.reason}` : null,
+                meta.wasClean !== undefined ? `정상 종료 여부: ${meta.wasClean ? '예' : '아니오'}` : null,
+                meta.error ? `오류: ${meta.error}` : null,
+                meta.source ? `발생 지점: ${meta.source}` : null,
+                meta.lastMessageType ? `마지막 수신 타입: ${meta.lastMessageType}` : null,
+                meta.lastMessageAt ? `마지막 수신 시간: ${meta.lastMessageAt}` : null,
+                meta.uptimeMs !== undefined ? `연결 유지 시간: ${Math.round(meta.uptimeMs / 1000)}초` : null,
+                meta.packet ? `마지막 패킷 미리보기: ${meta.packet}` : null
+            ].filter(Boolean);
+            const reasonBox = document.getElementById('disconnectReason');
+            if (reasonBox) {
+                reasonBox.style.display = 'block';
+                const hint = meta.source === 'soop-disconnect-packet'
+                    ? '\n\n해석: WebSocket 자체 오류가 아니라 SOOP 채팅 서버가 연결 종료 패킷(0007)을 보낸 상황입니다. 방송 종료/채팅 서버 정책/중복 접속/세션 문제일 수 있습니다.'
+                    : '';
+                reasonBox.textContent = `🔎 최근 연결 끊김 원인\n${processedText}\n${detailLines.join('\n')}${hint}`;
+            }
+            div.innerHTML = `<span style="background:#ff9800; color:black; padding:1px 4px; border-radius:3px; font-size:10px; font-weight:bold;">연결 끊김</span> <span style="color:#ffb74d;">${processedText}</span>`;
+        }
         else if (chat.tag === 'ERROR' || chat.tag === 'FATAL') {
+            const meta = chat.meta || {};
+            const reasonBox = document.getElementById('disconnectReason');
+            if (reasonBox && chat.tag === 'FATAL') {
+                reasonBox.style.display = 'block';
+                reasonBox.textContent = `🔎 브릿지 종료 원인\n${processedText}${meta.stack ? '\n' + meta.stack : ''}`;
+            }
             div.innerHTML = `<span style="background:#eb0400; color:white; padding:1px 4px; border-radius:3px; font-size:10px;">오류</span> <span style="color:#ff4a4a;">${processedText}</span>`;
         }
         else {

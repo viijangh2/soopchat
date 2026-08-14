@@ -20,6 +20,11 @@ class SoopChat {
     options;
     handlers = [];
     pingIntervalId = null;
+    lastError = null;
+    connectedAt = null;
+    lastMessageType = null;
+    lastMessageAt = null;
+    lastPacketPreview = null;
     constructor(options) {
         this.options = options;
         this.options.baseUrls = options.baseUrls ?? const_1.DEFAULT_BASE_URLS;
@@ -42,6 +47,11 @@ class SoopChat {
             throw this.errorHandling("Not Streaming now");
         }
         this.chatUrl = this.makeChatUrl(this.liveDetail);
+        this.lastError = null;
+        this.connectedAt = null;
+        this.lastMessageType = null;
+        this.lastMessageAt = null;
+        this.lastPacketPreview = null;
         this.ws = new ws_1.default(this.chatUrl, ['chat'], { agent: this.createAgent() });
         this.ws.onopen = () => {
             const CONNECT_PACKET = this.getConnectPacket();
@@ -49,16 +59,37 @@ class SoopChat {
         };
         this.ws.onmessage = this.handleMessage.bind(this);
         this.startPingInterval();
-        this.ws.onclose = () => {
-            this.disconnect();
+        this.ws.onerror = (event) => {
+            this.lastError = event?.message || event?.error?.message || 'WebSocket error';
+        };
+        this.ws.onclose = (event) => {
+            this.disconnect({
+                code: event?.code,
+                reason: event?.reason,
+                wasClean: event?.wasClean,
+                error: this.lastError,
+                source: 'websocket-close'
+            });
         };
     }
-    async disconnect() {
+    async disconnect(detail = {}) {
         if (!this._connected) {
             return;
         }
         const receivedTime = new Date().toISOString();
-        this.emit(event_1.SoopChatEvent.DISCONNECT, { streamerId: this.options.streamerId, receivedTime: receivedTime });
+        this.emit(event_1.SoopChatEvent.DISCONNECT, {
+            streamerId: this.options.streamerId,
+            receivedTime: receivedTime,
+            code: detail.code,
+            reason: detail.reason,
+            wasClean: detail.wasClean,
+            error: detail.error,
+            source: detail.source,
+            packet: detail.packet,
+            lastMessageType: this.lastMessageType,
+            lastMessageAt: this.lastMessageAt,
+            uptimeMs: this.connectedAt ? Date.now() - this.connectedAt : undefined
+        });
         this.stopPingInterval();
         this.ws?.close();
         this.ws = null;
@@ -94,9 +125,15 @@ class SoopChat {
         const packet = data.data.toString();
         this.emit(event_1.SoopChatEvent.RAW, Buffer.from(packet));
         const messageType = this.parseMessageType(packet);
+        this.lastMessageType = messageType;
+        this.lastMessageAt = receivedTime;
+        this.lastPacketPreview = packet
+            .replace(/[\x00-\x1f\x7f]/g, (char) => `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+            .slice(0, 300);
         switch (messageType) {
             case types_1.ChatType.CONNECT:
                 this._connected = true;
+                this.connectedAt = Date.now();
                 const connect = this.parseConnect(packet);
                 this.emit(event_1.SoopChatEvent.CONNECT, { ...connect, streamerId: this.options.streamerId, receivedTime: receivedTime });
                 const JOIN_PACKET = this.getJoinPacket();
@@ -148,7 +185,11 @@ class SoopChat {
                 this.emit(event_1.SoopChatEvent.EXIT, { ...exit, receivedTime: receivedTime });
                 break;
             case types_1.ChatType.DISCONNECT:
-                await this.disconnect();
+                await this.disconnect({
+                    source: 'soop-disconnect-packet',
+                    reason: 'SOOP 채팅 서버가 DISCONNECT(0007) 패킷을 보냈습니다.',
+                    packet: this.lastPacketPreview
+                });
                 break;
             default:
                 const parts = packet.split(types_1.ChatDelimiter.SEPARATOR);
