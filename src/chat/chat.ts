@@ -384,9 +384,15 @@ export class SoopChat {
             payload += `pver${ChatDelimiter.ELEMENT_START}2${ChatDelimiter.ELEMENT_END}`
             payload += `access_system${ChatDelimiter.ELEMENT_START}html5${ChatDelimiter.ELEMENT_END}`
             payload += `${ChatDelimiter.SEPARATOR}`
-        } else {
-            payload += `${ChatDelimiter.SEPARATOR.repeat(5)}`
-        }
+            } else {
+                if (this.options.password) {
+                    payload += `${ChatDelimiter.SEPARATOR.repeat(4)}`;
+                    payload += `pwd${ChatDelimiter.ELEMENT_START}${this.options.password}${ChatDelimiter.ELEMENT_END}`;
+                    payload += `${ChatDelimiter.SEPARATOR}`;
+                } else {
+                    payload += `${ChatDelimiter.SEPARATOR.repeat(5)}`;
+                }
+            }
         return this.getPacket(ChatType.ENTER_CHAT_ROOM, payload);
     }
 
