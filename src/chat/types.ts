@@ -3,6 +3,7 @@ import {SoopClient} from "../client"
 
 export interface SoopChatOptions {
     streamerId: string
+    password?: string;
     login?: SoopLoginOptions
     baseUrls?: SoopAPIBaseUrls
 }
