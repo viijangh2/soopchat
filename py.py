@@ -7,16 +7,29 @@ import subprocess
 # -------------------------------------------------------------
 target_dir = "/content/soop_ex"
 
-if not os.path.exists(os.path.join(target_dir, "node_modules")):
+def has_working_package():
+    """Check the installed package, not merely the node_modules directory."""
+    try:
+        check = subprocess.run(
+            ["node", "-e", "require('soop-extension')"],
+            cwd=target_dir,
+            capture_output=True,
+            text=True,
+        )
+        return check.returncode == 0
+    except FileNotFoundError:
+        return False
+
+if not has_working_package():
     print("🔄 최초 1회 환경 설정 및 패키지 설치를 시작합니다... (약 2~4분 소요)")
 
     setup_cmd = (
         "cd /content && "
-        "curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - > /dev/null 2>&1 && "
-        "sudo apt-get install -y nodejs > /dev/null 2>&1 && "
+        "command -v node >/dev/null 2>&1 || (curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs) && "
         "mkdir -p soop_ex && cd soop_ex && "
         "npm init -y > /dev/null 2>&1 && "
-        "npm install git+https://github.com/viijangh2/soopchat.git"
+        "npm install --no-save git+https://github.com/viijangh2/soopchat.git && "
+        "node -e \"require('soop-extension')\""
     )
 
     result = subprocess.run(setup_cmd, shell=True, capture_output=True, text=True)
@@ -222,7 +235,9 @@ async function start() {
 
     const soopChat = client.chat({
         streamerId: streamerId,
-        login: loginConfig
+        // Reuse the authenticated session above. Signing in a second time can
+        // invalidate or rate-limit the session in long-running Colab notebooks.
+        ...(loginResult ? { cookie: loginResult } : { login: loginConfig })
     });
 
     try {

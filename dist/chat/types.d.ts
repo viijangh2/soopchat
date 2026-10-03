@@ -1,8 +1,12 @@
 import { SoopAPIBaseUrls, SoopLoginOptions } from "../types";
 import { SoopClient } from "../client";
+import { Cookie } from "../api";
 export interface SoopChatOptions {
     streamerId: string;
+    password?: string;
     login?: SoopLoginOptions;
+    /** Reuse a cookie returned by `client.auth.signIn` instead of signing in again. */
+    cookie?: Cookie;
     baseUrls?: SoopAPIBaseUrls;
 }
 export interface SoopChatOptionsWithClient extends SoopChatOptions {

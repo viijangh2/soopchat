@@ -25,6 +25,7 @@ class SoopChat {
     lastMessageType = null;
     lastMessageAt = null;
     lastPacketPreview = null;
+    disconnectEmitted = false;
     constructor(options) {
         this.options = options;
         this.options.baseUrls = options.baseUrls ?? const_1.DEFAULT_BASE_URLS;
@@ -34,9 +35,13 @@ class SoopChat {
     _entered = false;
     async connect() {
         if (this._connected) {
-            this.errorHandling('Already connected');
+            throw this.errorHandling('Already connected');
         }
-        if (this.options.login) {
+        if (this.options.cookie) {
+            this.cookie = this.options.cookie;
+            this.liveDetail = await this.client.live.detail(this.options.streamerId, this.cookie);
+        }
+        else if (this.options.login) {
             this.cookie = await this.client.auth.signIn(this.options.login.userId, this.options.login.password);
             this.liveDetail = await this.client.live.detail(this.options.streamerId, this.cookie);
         }
@@ -52,6 +57,8 @@ class SoopChat {
         this.lastMessageType = null;
         this.lastMessageAt = null;
         this.lastPacketPreview = null;
+        this._entered = false;
+        this.disconnectEmitted = false;
         this.ws = new ws_1.default(this.chatUrl, ['chat'], { agent: this.createAgent() });
         this.ws.onopen = () => {
             const CONNECT_PACKET = this.getConnectPacket();
@@ -71,11 +78,28 @@ class SoopChat {
                 source: 'websocket-close'
             });
         };
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Timed out while connecting to the SOOP chat server'));
+                this.disconnect({ source: 'connection-timeout', error: 'Timed out while connecting' });
+            }, 20_000);
+            const onConnect = () => {
+                clearTimeout(timeout);
+                resolve();
+            };
+            const onFailure = (detail = {}) => {
+                clearTimeout(timeout);
+                reject(new Error(detail.error || 'Connection closed before the chat handshake completed'));
+            };
+            this.on(event_1.SoopChatEvent.CONNECT, onConnect);
+            this.on(event_1.SoopChatEvent.DISCONNECT, onFailure);
+        });
     }
     async disconnect(detail = {}) {
-        if (!this._connected) {
+        if (this.disconnectEmitted) {
             return;
         }
+        this.disconnectEmitted = true;
         const receivedTime = new Date().toISOString();
         this.emit(event_1.SoopChatEvent.DISCONNECT, {
             streamerId: this.options.streamerId,
@@ -91,7 +115,9 @@ class SoopChat {
             uptimeMs: this.connectedAt ? Date.now() - this.connectedAt : undefined
         });
         this.stopPingInterval();
-        this.ws?.close();
+        if (this.ws && this.ws.readyState !== ws_1.default.CLOSED) {
+            this.ws.close();
+        }
         this.ws = null;
         this._connected = false;
     }
@@ -338,7 +364,14 @@ class SoopChat {
             payload += `${types_1.ChatDelimiter.SEPARATOR}`;
         }
         else {
-            payload += `${types_1.ChatDelimiter.SEPARATOR.repeat(5)}`;
+            if (this.options.password) {
+                payload += `${types_1.ChatDelimiter.SEPARATOR.repeat(4)}`;
+                payload += `pwd${types_1.ChatDelimiter.ELEMENT_START}${this.options.password}${types_1.ChatDelimiter.ELEMENT_END}`;
+                payload += `${types_1.ChatDelimiter.SEPARATOR}`;
+            }
+            else {
+                payload += `${types_1.ChatDelimiter.SEPARATOR.repeat(5)}`;
+            }
         }
         return this.getPacket(types_1.ChatType.ENTER_CHAT_ROOM, payload);
     }

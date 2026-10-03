@@ -21,6 +21,7 @@ export class SoopChat {
     private lastMessageType: string = null
     private lastMessageAt: string = null
     private lastPacketPreview: string = null
+    private disconnectEmitted: boolean = false
 
     constructor(options: SoopChatOptionsWithClient) {
         this.options = options
@@ -31,12 +32,15 @@ export class SoopChat {
     private _connected: boolean = false
     private _entered: boolean = false
 
-    async connect() {
+    async connect(): Promise<void> {
         if (this._connected) {
-            this.errorHandling('Already connected')
+            throw this.errorHandling('Already connected')
         }
 
-        if(this.options.login) {
+        if (this.options.cookie) {
+            this.cookie = this.options.cookie
+            this.liveDetail = await this.client.live.detail(this.options.streamerId, this.cookie)
+        } else if(this.options.login) {
             this.cookie = await this.client.auth.signIn(this.options.login.userId, this.options.login.password);
             this.liveDetail = await this.client.live.detail(this.options.streamerId, this.cookie)
         } else {
@@ -52,6 +56,8 @@ export class SoopChat {
         this.lastMessageType = null
         this.lastMessageAt = null
         this.lastPacketPreview = null
+        this._entered = false
+        this.disconnectEmitted = false
 
         this.ws = new WebSocket(
             this.chatUrl,
@@ -80,12 +86,32 @@ export class SoopChat {
                 source: 'websocket-close'
             })
         }
+
+        await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Timed out while connecting to the SOOP chat server'))
+                this.disconnect({source: 'connection-timeout', error: 'Timed out while connecting'})
+            }, 20_000)
+
+            const onConnect = () => {
+                clearTimeout(timeout)
+                resolve()
+            }
+            const onFailure = (detail: { error?: string } = {}) => {
+                clearTimeout(timeout)
+                reject(new Error(detail.error || 'Connection closed before the chat handshake completed'))
+            }
+
+            this.on(SoopChatEvent.CONNECT, onConnect)
+            this.on(SoopChatEvent.DISCONNECT, onFailure)
+        })
     }
 
     async disconnect(detail: { code?: number, reason?: string, wasClean?: boolean, error?: string, source?: string, packet?: string } = {}) {
-        if (!this._connected) {
+        if (this.disconnectEmitted) {
             return
         }
+        this.disconnectEmitted = true
         const receivedTime = new Date().toISOString();
         this.emit(SoopChatEvent.DISCONNECT, {
             streamerId: this.options.streamerId,
@@ -101,7 +127,9 @@ export class SoopChat {
             uptimeMs: this.connectedAt ? Date.now() - this.connectedAt : undefined
         })
         this.stopPingInterval()
-        this.ws?.close()
+        if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+            this.ws.close()
+        }
         this.ws = null
         this._connected = false
     }

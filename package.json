@@ -15,9 +15,16 @@
     "typings": "dist/index.d.ts",
     "scripts": {
         "build": "tsc",
+        "prepare": "npm run build",
+        "prepack": "npm run build",
         "test": "ts-node example.ts",
         "lint": "eslint"
     },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
     "repository": {
         "type": "git",
         "url": "https://github.com/maro5397/soop.git"

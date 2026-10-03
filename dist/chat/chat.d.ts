@@ -13,6 +13,7 @@ export declare class SoopChat {
     private lastMessageType;
     private lastMessageAt;
     private lastPacketPreview;
+    private disconnectEmitted;
     constructor(options: SoopChatOptionsWithClient);
     private _connected;
     private _entered;
